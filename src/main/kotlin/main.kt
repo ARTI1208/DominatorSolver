@@ -57,16 +57,17 @@ data class BaseBlock(val name: String) : Comparable<BaseBlock> {
 
         val prev = processedBlocks.put(this, dominator)
 
-        if (dominator != prev) {
-            println("NewDom: $dominator")
-        }
+//        if (dominator != prev) {
+//            println("NewDom: $dominator")
+//        }
 
         return dominator
     }
 
     fun log(any: Any) {
         val testName = "SKIP"
-        if (name == testName) {
+//        if (name == testName) {
+        if (false) {
             println(any)
         }
     }
@@ -82,12 +83,22 @@ data class BaseBlock(val name: String) : Comparable<BaseBlock> {
             if (dom != null) return dom
         }
 
-        if (preds.isEmpty()) return createDominator(processedBlocks, emptySet())
+        if (preds.isEmpty()) {
+            println("$name = {$name}")
+            return createDominator(processedBlocks, emptySet())
+        }
 
         val fst = preds.first()
-        if (fst !in processedBlocks) return createDominator(processedBlocks, emptySet())
+        if (fst !in processedBlocks) {
+            println("u_$name = {$name}")
+            return createDominator(processedBlocks, emptySet())
+        }
+
+        val map = HashMap<String, Set<String>>()
 
         val fstDom = fst.calculateDominator(processedBlocks).dominators
+
+        map += fst.name to fstDom.mapTo(HashSet()) { it.block.name }
 
         log("Pred: ${fst.name}; ${fstDom.map { it.block.name }.joinToString()}")
 
@@ -108,10 +119,25 @@ data class BaseBlock(val name: String) : Comparable<BaseBlock> {
 
             val nextDom = baseBlock.calculateDominator(processedBlocks).dominators
 
+            map += baseBlock.name to nextDom.mapTo(HashSet()) { it.block.name }
+
             log("${nextDom.map { it.block }.joinToString()}")
 
             acc.intersect(nextDom)
         }
+
+        println("$name = {$name} \\/ (${map.keys.joinToString(separator = " /\\ ") { "D($it)" }}) = {$name} \\/ (${
+            map.entries.joinToString(
+                separator = " /\\ "
+            ) { it.value.joinToString(
+                prefix = "{",
+                postfix = "}"
+            ) { 
+                it
+            } }
+        }) = ${(predDoms + Dominator(this, emptySet())).joinToString(
+            prefix = "{",
+            postfix = "}") { it.block.name }}")
 
         return createDominator(processedBlocks, predDoms)
     }
@@ -169,9 +195,7 @@ class CFG(val blocks: List<BaseBlock>) {
         return blocks.map { it.calculateDominator(map) }
     }
 
-    fun calculateBoundaries(): Map<BaseBlock, Set<BaseBlock>> {
-
-        val dominators = calculateDominators()
+    fun calculateBoundaries(dominators : List<Dominator>): Map<BaseBlock, Set<BaseBlock>> {
 
         val dfs = mutableMapOf<BaseBlock, MutableSet<BaseBlock>>()
 
@@ -182,13 +206,19 @@ class CFG(val blocks: List<BaseBlock>) {
         blocks.forEachIndexed { index, baseBlock ->
 
             if (baseBlock.preds.size > 1) {
+                val blockIDominator = dominators[index].idom?.block
+                println("Pred(${baseBlock.name}) = ${baseBlock.preds.joinToString(prefix = "{", postfix = "}") { it.name }}, IDom(${baseBlock.name}) = {${blockIDominator?.name ?: "-"}}")
                 baseBlock.preds.forEach {
                     var curPred: BaseBlock? = it
-                    while (curPred != null && curPred != dominators[index].idom?.block) {
+                    while (curPred != null && curPred != blockIDominator) {
+
+                        val curPredDom = dominators.first { it.block == curPred }.idom?.block
+
+                        println("${curPred.name} -> ${curPredDom?.name ?: "-"}: DF(${curPred.name}) += {${baseBlock.name}}")
 
                         dfs[curPred]?.plusAssign(baseBlock)
 
-                        curPred = dominators.first { it.block == curPred }.idom?.block
+                        curPred = curPredDom
                     }
                 }
             }
@@ -202,30 +232,32 @@ class CFG(val blocks: List<BaseBlock>) {
 
 fun main(args: Array<String>) {
 
-    testDomBounds2()
+//    testDomBounds()
 
 
-//    val blockA = BaseBlock("A")
-//    val blockB = BaseBlock("B")
-//    val blockC = BaseBlock("C")
-//    val blockD = BaseBlock("D")
-//    val blockE = BaseBlock("E")
-//
-//    blockA += listOf(blockB, blockE)
-//    blockB += listOf(blockC)
-//    blockC += listOf(blockC, blockD)
-//    blockD += listOf(blockB, blockE)
-//
-//    val blocks = listOf(blockA, blockB, blockC, blockD, blockE)
-//
-//    val cfg = CFG(blocks)
-//
-//    val dominators = cfg.calculateDominators()
-//    println(dominators.joinToString { "(${it.block.name}, ${it.idom?.block?.name ?: "-"})" })
-//
-//    val boundaries = cfg.calculateBoundaries()
-//
-//    println(boundaries.entries.joinToString { "(${it.key.name}: " + it.value.joinToString(prefix = "{", postfix = "}") { it.name } + ")" })
+    val blockA = BaseBlock("A")
+    val blockB = BaseBlock("B")
+    val blockC = BaseBlock("C")
+    val blockD = BaseBlock("D")
+    val blockE = BaseBlock("E")
+
+    blockA += listOf(blockB, blockE)
+    blockB += listOf(blockC)
+    blockC += listOf(blockC, blockD)
+    blockD += listOf(blockB, blockE)
+
+    val blocks = listOf(blockA, blockB, blockC, blockD, blockE)
+
+    val cfg = CFG(blocks)
+
+    val dominators = cfg.calculateDominators()
+    println("IDoms: " + dominators.joinToString { "(${it.block.name}, ${it.idom?.block?.name ?: "-"})" })
+    println()
+
+
+    val boundaries = cfg.calculateBoundaries(dominators)
+
+    println("Boundaries: " + boundaries.entries.joinToString { "(${it.key.name}: " + it.value.joinToString(prefix = "{", postfix = "}") { it.name } + ")" })
 }
 
 fun testDomTree() {
@@ -262,7 +294,7 @@ fun testDomTree() {
     val dominators = cfg.calculateDominators()
     println(dominators.joinToString { "(${it.block.name}, ${it.idom?.block?.name ?: "-"})" })
 
-    val boundaries = cfg.calculateBoundaries()
+    val boundaries = cfg.calculateBoundaries(dominators)
     println(boundaries.entries.joinToString { "(${it.key.name}: " + it.value.joinToString(prefix = "{", postfix = "}") { it.name } + ")" })
 }
 
@@ -297,7 +329,7 @@ fun testDomBounds() {
     val dominators = cfg.calculateDominators()
     println(dominators.joinToString { "(${it.block.name}, ${it.idom?.block?.name ?: "-"})" })
 
-    val boundaries = cfg.calculateBoundaries()
+    val boundaries = cfg.calculateBoundaries(dominators)
     println(boundaries.entries.joinToString { "(${it.key.name}: " + it.value.joinToString(prefix = "{", postfix = "}") { it.name } + ")" })
 }
 
@@ -333,6 +365,6 @@ fun testDomBounds2() {
     val dominators = cfg.calculateDominators()
     println(dominators.joinToString { "(${it.block.name}, ${it.idom?.block?.name ?: "-"})" })
 
-    val boundaries = cfg.calculateBoundaries()
+    val boundaries = cfg.calculateBoundaries(dominators)
     println(boundaries.entries.joinToString { "(${it.key.name}: " + it.value.joinToString(prefix = "{", postfix = "}") { it.name } + ")" })
 }
