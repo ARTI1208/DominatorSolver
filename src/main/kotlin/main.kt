@@ -72,7 +72,7 @@ data class BaseBlock(val name: String) : Comparable<BaseBlock> {
         }
     }
 
-    fun calculateDominator(processedBlocks: MutableMap<BaseBlock, Dominator?>): Dominator {
+    fun calculateDominator(processedBlocks: MutableMap<BaseBlock, Dominator?>, forceReCalc: Boolean = false): Dominator {
 
         log("CalcDom: $name")
 
@@ -80,7 +80,7 @@ data class BaseBlock(val name: String) : Comparable<BaseBlock> {
             processedBlocks += this to null
         } else {
             val dom = processedBlocks[this]
-            if (dom != null) return dom
+            if (dom != null && !forceReCalc) return dom
         }
 
         if (preds.isEmpty()) {
@@ -105,23 +105,29 @@ data class BaseBlock(val name: String) : Comparable<BaseBlock> {
         val predDoms = preds.drop(1).fold(fstDom) { acc, baseBlock ->
             log("Pred: ${baseBlock.name}")
             if (baseBlock !in processedBlocks) {
+
+                map += baseBlock.name to mutableSetOf("N1")
+
                 log("Not processed yet: ${baseBlock.name}")
                 return@fold acc
             }
             if (baseBlock in processedBlocks && processedBlocks[baseBlock] == null) {
+
+                map += baseBlock.name to mutableSetOf("N2")
+
                 log("Processing is in progress: ${baseBlock.name}")
                 return@fold acc
             }
-            if (baseBlock == this) {
-                log("Link to itself: ${baseBlock.name}")
-                return@fold acc
-            }
+//            if (baseBlock == this) {
+//                log("Link to itself: ${baseBlock.name}")
+//                return@fold acc
+//            }
 
             val nextDom = baseBlock.calculateDominator(processedBlocks).dominators
 
             map += baseBlock.name to nextDom.mapTo(HashSet()) { it.block.name }
 
-            log("${nextDom.map { it.block }.joinToString()}")
+            log(nextDom.map { it.block }.joinToString())
 
             acc.intersect(nextDom)
         }
@@ -192,7 +198,20 @@ class CFG(val blocks: List<BaseBlock>) {
 
     fun calculateDominators(): List<Dominator> {
         val map = mutableMapOf<BaseBlock, Dominator?>()
-        return blocks.map { it.calculateDominator(map) }
+
+
+
+        var dominators = blocks.map { it.calculateDominator(map) }
+        println("===========================")
+        var nextIterDoms = blocks.map { it.calculateDominator(map, true) }
+
+        while (dominators != nextIterDoms) {
+            dominators = nextIterDoms
+            println("===========================")
+            nextIterDoms = blocks.map { it.calculateDominator(map, true) }
+        }
+
+        return dominators
     }
 
     fun calculateBoundaries(dominators : List<Dominator>): Map<BaseBlock, Set<BaseBlock>> {
